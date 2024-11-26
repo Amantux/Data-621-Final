@@ -1,0 +1,488 @@
+---
+title: "Final_Project"
+author: "AZM"
+date: "2024-11-15"
+output: html_document
+---
+```{r}
+library(dplyr)     #For data manipulation
+library(caret)     #For machine learning models
+library(tidyr)     #For data cleaning
+library(ggcorrplot)
+library(ggplot2)
+library(dendextend)
+library(reshape2)
+library(polycor)
+```
+
+
+```{r}
+# Read the CSV file
+trade_register <- read.csv("trade-register.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE)
+
+# Check the first few rows to verify data import
+head(trade_register)
+```
+```{r}
+#Convert to numeric
+trade_register$SIPRI.TIV.for.total.order <- as.numeric(trade_register$SIPRI.TIV.for.total.order)
+
+#Count introduced NAs
+num_na_introduced <- sum(is.na(trade_register$SIPRI.TIV.for.total.order))
+
+#Print warning if any
+if(num_na_introduced > 0) {
+  print(paste("Warning:", num_na_introduced, "NA values introduced"))
+}
+
+#Replace NAs with 0
+trade_register$SIPRI.TIV.for.total.order[is.na(trade_register$SIPRI.TIV.for.total.order)] <- 0
+
+```
+
+
+
+```{r}
+#Summary stats for all columns
+summary_stats <- summary(trade_register)
+
+#Count NAs per column
+na_counts <- sapply(trade_register, function(x) sum(is.na(x)))
+
+#Flag irregularities
+irregularities <- data.frame(
+  Column = names(na_counts),
+  NA_Count = na_counts,
+  Zero_Count = sapply(trade_register, function(x) if(is.numeric(x)) sum(x == 0, na.rm = TRUE) else NA),
+  Outliers = sapply(trade_register, function(x) {
+    if(is.numeric(x)) {
+      q1 <- quantile(x, 0.25, na.rm = TRUE)
+      q3 <- quantile(x, 0.75, na.rm = TRUE)
+      iqr <- q3 - q1
+      sum(x < (q1 - 1.5 * iqr) | x > (q3 + 1.5 * iqr), na.rm = TRUE)
+    } else {
+      NA
+    }
+  })
+)
+
+#Print irregularities
+print("Summary Stats:")
+summary_stats
+
+print("Irregularities:")
+print(irregularities)
+
+
+print("Missing TIV Values")
+#Filter rows with NA in SIPRI.TIV.of.delivered.weapons
+na_rows <- trade_register[is.na(trade_register$SIPRI.TIV.of.delivered.weapons), ]
+
+#View the filtered rows
+print(na_rows)
+```
+Lets see whats going on with those weird rows with just pure ints. The are in the data. There is no explanation. I have reached out to see
+Let's run a quality check to ensure that every row has a supplier and recipient
+
+```{r}
+#Create a function to flag missing or irregular values
+is_missing_or_irregular <- function(x) {
+  if (is.character(x)) {
+    return(is.na(x) | x == "" | grepl("^\\s*$", x) | !grepl("[a-zA-Z]", x))
+  } else {
+    return(is.na(x))
+  }
+}
+
+flagged_rows <- trade_register %>%
+  filter(!grepl("[a-zA-Z]", Recipient) | !grepl("[a-zA-Z]", Supplier))
+
+#View flagged rows
+print(flagged_rows)
+```
+
+Lets remove those useless rows
+```{r}
+#Drop rows where Recipient or Supplier does not contain a-z
+trade_register <- trade_register %>%
+  filter(grepl("[a-zA-Z]", Recipient) & grepl("[a-zA-Z]", Supplier))
+
+#Lets remove the missing flag too
+fields_to_remove <- c("Missing_Flag") #Add any fields you want to remove
+
+#Remove fields that exist in the dataset
+trade_register <- trade_register %>%
+  select(-all_of(intersect(fields_to_remove, names(trade_register))))
+
+#View the cleaned dataset
+head(trade_register)
+```
+
+Cut Data for Faster Processing & Testing
+```{r}
+set.seed(42)  # For reproducibility
+sample_size <- 500  # Define sample size
+trade_register_sample <- trade_register[sample(1:nrow(trade_register), sample_size), ]
+
+```
+
+
+
+```{r}
+#Identify categorical/numeric cols in the sample
+categorical_cols <- names(Filter(function(x) is.factor(x) || is.character(x), data))
+numeric_cols <- names(Filter(is.numeric, data))
+
+#Init results df
+anova_results <- data.frame(Categorical_Variable=character(),
+                            Numeric_Variable=character(),
+                            P_Value=numeric(),
+                            stringsAsFactors=FALSE)
+
+#Run ANOVA for each pair
+for(cat in categorical_cols) {
+  for(num in numeric_cols) {
+    tryCatch({
+      #Run ANOVA
+      formula <- as.formula(paste(num, "~", cat))
+      anova_result <- summary(aov(formula, data=trade_register_sample))
+      
+      #Extract p-value
+      p_value <- anova_result[[1]]$`Pr(>F)`[1]
+      
+      
+      
+      #Store result
+      anova_results <- rbind(anova_results, data.frame(
+        Categorical_Variable=cat,
+        Numeric_Variable=num,
+        P_Value=p_value
+      ))
+    }, error=function(e) {
+      #Handle error
+      anova_results <- rbind(anova_results, data.frame(
+        Categorical_Variable=cat,
+        Numeric_Variable=num,
+        P_Value=NA
+      ))
+    })
+  }
+}
+
+#Drop NA rows
+anova_results <- na.omit(anova_results)
+
+#View results
+print(anova_results)
+
+anova_matrix <- dcast(anova_results, Numeric_Variable ~ Categorical_Variable, value.var = "P_Value")
+
+# Check for correct column names after melting
+anova_long <- melt(anova_matrix, id.vars = "Numeric_Variable", variable.name = "Categorical_Variable", value.name = "P_Value")
+
+# Create a heatmap for the p-values
+ggplot(anova_long, aes(x = Categorical_Variable, y = Numeric_Variable, fill = P_Value)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = ifelse(!is.na(P_Value), round(P_Value, 3), "")), 
+            size = 3, color = "black") +
+  scale_fill_gradient2(
+    low = "blue", high = "red", mid = "white", 
+    midpoint = 0.05, limit = c(0, 1)
+  ) +
+  labs(
+    title = "ANOVA-Based P-Value Heatmap",
+    x = "Categorical Variable", 
+    y = "Numeric Variable", 
+    fill = "P-Value"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+
+
+Let's go for a more advanced method: eta-squared
+```{r}
+data <- trade_register_sample
+
+# Identify categorical and numeric columns
+categorical_cols <- names(Filter(function(x) is.factor(x) || is.character(x), data))
+numeric_cols <- names(Filter(is.numeric, data))
+
+# Initialize results data frame
+results <- data.frame(
+  Variable_1 = character(),
+  Variable_2 = character(),
+  Eta_Squared = numeric(),
+  Measure = character(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through all pairs of columns
+for (col1 in names(data)) {
+  for (col2 in names(data)) {
+    if (col1 != col2) {
+      tryCatch({
+        # Categorical vs Numeric: Use ANOVA to compute Eta-Squared
+        if (col1 %in% categorical_cols && col2 %in% numeric_cols) {
+          formula <- as.formula(paste(col2, "~", col1))
+          anova_model <- aov(formula, data = data)
+          anova_table <- anova(anova_model)
+          ss_total <- sum(anova_table$`Sum Sq`, na.rm = TRUE)
+          ss_model <- anova_table$`Sum Sq`[1]
+          eta_squared <- ifelse(ss_total != 0, ss_model / ss_total, NA)
+          results <- rbind(results, data.frame(
+            Variable_1 = col1,
+            Variable_2 = col2,
+            Eta_Squared = eta_squared,
+            Measure = "Eta-Squared"
+          ))
+        }
+        
+        # Numeric vs Numeric: Use R-squared from Linear Regression
+        if (col1 %in% numeric_cols && col2 %in% numeric_cols) {
+          formula <- as.formula(paste(col2, "~", col1))
+          model <- lm(formula, data = data)
+          r_squared <- summary(model)$r.squared
+          results <- rbind(results, data.frame(
+            Variable_1 = col1,
+            Variable_2 = col2,
+            Eta_Squared = r_squared,
+            Measure = "R-Squared"
+          ))
+        }
+        
+        # Categorical vs Categorical: Use Cramér's V
+        if (col1 %in% categorical_cols && col2 %in% categorical_cols) {
+          cramers_v <- cramersV(data[[col1]], data[[col2]], useNA = "no")
+          results <- rbind(results, data.frame(
+            Variable_1 = col1,
+            Variable_2 = col2,
+            Eta_Squared = cramers_v^2,  # Use square for consistency
+            Measure = "Cramer's V^2"
+          ))
+        }
+      }, error = function(e) {
+        # Handle errors (e.g., missing values)
+        results <- rbind(results, data.frame(
+          Variable_1 = col1,
+          Variable_2 = col2,
+          Eta_Squared = NA,
+          Measure = "Error"
+        ))
+      })
+    }
+  }
+}
+
+# View results
+print(results)
+```
+
+
+```{r}
+# Filter results to include only Eta-Squared, R-Squared, and Cramér's V^2
+heatmap_data <- results %>%
+  filter(Measure %in% c("Eta-Squared", "R-Squared", "Cramer's V^2")) %>%
+  mutate(Eta_Squared = ifelse(is.na(Eta_Squared), 0, Eta_Squared))  # Replace NA with 0 for plotting
+
+# Create a heatmap of effect sizes
+ggplot(heatmap_data, aes(x = Variable_1, y = Variable_2, fill = Eta_Squared)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(Eta_Squared, 2)), size = 3, color = "black") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0.1, limit = c(0, 1)) +
+  labs(
+    title = "Effect Size Heatmap (Eta-Squared, R-Squared, Cramer's V^2)",
+    x = "Variable 1",
+    y = "Variable 2",
+    fill = "Effect Size"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+```{r}
+# Filter and pivot the results to create a symmetric matrix
+results_filtered <- results[results$Measure == "Eta-Squared", ]  # Filter only Eta-Squared values
+
+# Create a full list of unique variables (to ensure symmetry)
+all_vars <- unique(c(results_filtered$Variable_1, results_filtered$Variable_2))
+
+# Create an empty symmetric matrix with all variables
+empty_matrix <- matrix(0, nrow = length(all_vars), ncol = length(all_vars),
+                       dimnames = list(all_vars, all_vars))
+
+# Fill the matrix with Eta-Squared values
+for (i in 1:nrow(results_filtered)) {
+  var1 <- results_filtered$Variable_1[i]
+  var2 <- results_filtered$Variable_2[i]
+  eta_sq <- results_filtered$Eta_Squared[i]
+  
+  # Fill both [var1, var2] and [var2, var1] for symmetry
+  empty_matrix[var1, var2] <- eta_sq
+  empty_matrix[var2, var1] <- eta_sq
+}
+
+# Convert the symmetric matrix into a distance matrix
+dist_matrix <- as.dist(1 - empty_matrix)  # Use (1 - Eta-Squared) as distance
+
+# Perform hierarchical clustering
+hclust_result <- hclust(dist_matrix, method = "average")  # Average linkage method
+
+# Plot the dendrogram
+plot(hclust_result, main = "Dendrogram of Variables Based on Eta-Squared",
+     xlab = "", sub = "", cex = 0.8)
+
+# Enhanced dendrogram visualization with colors
+dend <- as.dendrogram(hclust_result)
+dend <- color_branches(dend, k = 3)  # Color branches into 3 clusters
+plot(dend, main = "Enhanced Dendrogram of Variables")
+```
+
+
+
+Let's start our model building:
+```{r}
+data <- na.omit(trade_register_sample)  # Or use imputation if preferred
+
+
+
+
+data$Recipient <- as.factor(data$Recipient)
+data$Supplier <- as.factor(data$Supplier)
+data$status <- as.factor(data$status)
+data$Weapon.designation <- as.factor(data$Weapon.designation)
+data$Weapon.description <- as.factor(data$Weapon.description)
+data$Year.of.order <- scale(data$Year.of.order)
+
+# Define the full model with all predictors
+full_model <- lm(SIPRI.TIV.for.total.order ~ Recipient + Supplier + Year.of.order + 
+                     Number.ordered + Weapon.designation + Weapon.description + 
+                     Number.delivered + Year.s..of.delivery + status, 
+                 data = data)
+
+# Define the null model (intercept-only)
+null_model <- lm(SIPRI.TIV.for.total.order ~ 1, data = data)
+
+# Perform stepwise regression based on AIC
+stepwise_model <- step(null_model, 
+                       scope = list(lower = null_model, upper = full_model), 
+                       direction = "both", 
+                       trace = TRUE)
+
+# View the final model
+summary(stepwise_model)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Take a random sample from the dataset
+set.seed(42)  # For reproducibility
+sample_size <- 500  # Define sample size
+trade_register_sample <- trade_register[sample(1:nrow(trade_register), sample_size), ]
+
+# Identify categorical and numeric columns
+categorical_cols <- names(Filter(is.factor, trade_register))
+numeric_cols <- names(Filter(is.numeric, trade_register))
+
+# Store ANOVA results
+anova_results <- data.frame(Relationship = character(),
+                            P_Value = numeric(),
+                            stringsAsFactors = FALSE)
+
+# Perform ANOVA for each categorical-numeric pair
+for (cat in categorical_cols) {
+  for (num in numeric_cols) {
+    formula <- as.formula(paste(num, "~", cat))  # Create the ANOVA formula
+    tryCatch({
+      anova_result <- summary(aov(formula, data = trade_register_sample))
+      p_value <- anova_result[[1]]["Pr(>F)"][1]  # Extract the p-value
+      anova_results <- rbind(anova_results, data.frame(Relationship = paste(num, "~", cat),
+                                                       P_Value = p_value))
+    }, error = function(e) {
+      # Handle errors gracefully (e.g., due to missing data)
+      anova_results <- rbind(anova_results, data.frame(Relationship = paste(num, "~", cat),
+                                                       P_Value = NA))
+    })
+  }
+}
+
+# Display the ANOVA results
+print("ANOVA Results:")
+print(anova_results)
+
+# Save results as a table for inspection
+#write.csv(anova_results, "anova_results.csv", row.names = FALSE)
+
+
+```
+
+
+
+```{r}
+trade_register <- trade_register %>%
+  mutate(across(everything(), ~ ifelse(is.na(.), "Unknown", .))) # Replace NAs
+
+#categorical variables to factors
+categorical_columns <- c("Recipient", "Supplier", "Weapon.designation", 
+                         "Weapon.description", "status", "Comments", "Year.s..of.delivery")
+trade_register[categorical_columns] <- lapply(trade_register[categorical_columns], as.factor)
+
+#Check for numerical columns and normalize if needed
+numerical_columns <- c("Year.of.order", "Number.ordered", "Number.delivered")
+head(trade_register)
+```
+
+```{r}
+trade_register <- trade_register %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), median(., na.rm = TRUE), .)))
+set.seed(123) # For reproducibility
+trainIndex <- createDataPartition(trade_register$SIPRI.TIV.for.total.order, p = 0.8, list = FALSE)
+train_data <- trade_register[trainIndex, ]
+test_data <- trade_register[-trainIndex, ]
+train_data
+```
+
+```{r}
+# Train a Random Forest model
+# Train a linear regression model
+linear_model <- lm(SIPRI.TIV.for.total.order ~ Recipient + Supplier + Year.of.order + 
+                     Number.ordered + Weapon.designation + Weapon.description + 
+                     Number.delivered + Year.s..of.delivery + status + Comments, 
+                   data = train_data)
+
+# Summarize the model
+summary(linear_model)
+
+# Predict on the test set
+linear_predictions <- predict(linear_model, test_data)
+
+# Evaluate performance
+postResample(linear_predictions, test_data$SIPRI.TIV.for.total.order)
+```
+
