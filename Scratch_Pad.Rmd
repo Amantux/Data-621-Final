@@ -130,8 +130,8 @@ trade_register_sample <- trade_register[sample(1:nrow(trade_register), sample_si
 
 ```{r}
 #Identify categorical/numeric cols in the sample
-categorical_cols <- names(Filter(function(x) is.factor(x) || is.character(x), data))
-numeric_cols <- names(Filter(is.numeric, data))
+categorical_cols <- names(Filter(function(x) is.factor(x) || is.character(x), trade_register_sample))
+numeric_cols <- names(Filter(is.numeric, trade_register_sample))
 
 #Init results df
 anova_results <- data.frame(Categorical_Variable=character(),
@@ -283,12 +283,12 @@ print(results)
 
 
 ```{r}
-# Filter results to include only Eta-Squared, R-Squared, and Cramér's V^2
+#Filter results to include only Eta-Squared, R-Squared, and Cramér's V^2
 heatmap_data <- results %>%
   filter(Measure %in% c("Eta-Squared", "R-Squared", "Cramer's V^2")) %>%
   mutate(Eta_Squared = ifelse(is.na(Eta_Squared), 0, Eta_Squared))  # Replace NA with 0 for plotting
 
-# Create a heatmap of effect sizes
+#Create a heatmap of effect sizes
 ggplot(heatmap_data, aes(x = Variable_1, y = Variable_2, fill = Eta_Squared)) +
   geom_tile(color = "white") +
   geom_text(aes(label = round(Eta_Squared, 2)), size = 3, color = "black") +
@@ -306,17 +306,17 @@ ggplot(heatmap_data, aes(x = Variable_1, y = Variable_2, fill = Eta_Squared)) +
   )
 ```
 ```{r}
-# Filter and pivot the results to create a symmetric matrix
+#Filter and pivot the results to create a symmetric matrix
 results_filtered <- results[results$Measure == "Eta-Squared", ]  # Filter only Eta-Squared values
 
-# Create a full list of unique variables (to ensure symmetry)
+#Create a full list of unique variables (to ensure symmetry)
 all_vars <- unique(c(results_filtered$Variable_1, results_filtered$Variable_2))
 
-# Create an empty symmetric matrix with all variables
+#Create an empty symmetric matrix with all variables
 empty_matrix <- matrix(0, nrow = length(all_vars), ncol = length(all_vars),
                        dimnames = list(all_vars, all_vars))
 
-# Fill the matrix with Eta-Squared values
+#Fill the matrix with Eta-Squared values
 for (i in 1:nrow(results_filtered)) {
   var1 <- results_filtered$Variable_1[i]
   var2 <- results_filtered$Variable_2[i]
@@ -401,21 +401,21 @@ summary(stepwise_model)
 
 
 ```{r}
-# Take a random sample from the dataset
-set.seed(42)  # For reproducibility
-sample_size <- 500  # Define sample size
+#Take a random sample from the dataset
+set.seed(42)  #For reproducibility
+sample_size <- 500  #Define sample size
 trade_register_sample <- trade_register[sample(1:nrow(trade_register), sample_size), ]
 
-# Identify categorical and numeric columns
+#Identify categorical and numeric columns
 categorical_cols <- names(Filter(is.factor, trade_register))
 numeric_cols <- names(Filter(is.numeric, trade_register))
 
-# Store ANOVA results
+#Store ANOVA results
 anova_results <- data.frame(Relationship = character(),
                             P_Value = numeric(),
                             stringsAsFactors = FALSE)
 
-# Perform ANOVA for each categorical-numeric pair
+#Perform ANOVA for each categorical-numeric pair
 for (cat in categorical_cols) {
   for (num in numeric_cols) {
     formula <- as.formula(paste(num, "~", cat))  # Create the ANOVA formula
@@ -432,11 +432,11 @@ for (cat in categorical_cols) {
   }
 }
 
-# Display the ANOVA results
+#Display the ANOVA results
 print("ANOVA Results:")
 print(anova_results)
 
-# Save results as a table for inspection
+#Save results as a table for inspection
 #write.csv(anova_results, "anova_results.csv", row.names = FALSE)
 
 
@@ -467,22 +467,52 @@ train_data <- trade_register[trainIndex, ]
 test_data <- trade_register[-trainIndex, ]
 train_data
 ```
-
 ```{r}
-# Train a Random Forest model
-# Train a linear regression model
-linear_model <- lm(SIPRI.TIV.for.total.order ~ Recipient + Supplier + Year.of.order + 
-                     Number.ordered + Weapon.designation + Weapon.description + 
+#Train a linear regression model
+linear_model <- lm(SIPRI.TIV.for.total.order ~ Recipient + Supplier + Year.of.order  + Weapon.designation + Weapon.description + 
                      Number.delivered + Year.s..of.delivery + status + Comments, 
                    data = train_data)
+```
 
-# Summarize the model
+
+
+```{r}
+
+
+#Summarize the model
 summary(linear_model)
 
-# Predict on the test set
-linear_predictions <- predict(linear_model, test_data)
+train_data$Recipient <- as.factor(train_data$Recipient)
+test_data$Recipient <- as.factor(test_data$Recipient)
 
-# Evaluate performance
+```
+
+```{r}
+# Find levels in test but not in train
+missing_in_train <- setdiff(levels(test_data$Recipient), levels(train_data$Recipient))
+
+# Find levels in train but not in test
+missing_in_test <- setdiff(levels(train_data$Recipient), levels(test_data$Recipient))
+
+# Print results
+print("Recipients in test but not in train:")
+print(missing_in_train)
+
+print("Recipients in train but not in test:")
+print(missing_in_test)
+
+# Align levels between train and test
+test_data$Recipient <- factor(test_data$Recipient, levels = levels(train_data$Recipient))
+
+# Assign unknown levels to "Unknown"
+test_data$Recipient[is.na(test_data$Recipient)] <- "Unknown"
+
+# Predict using the trained model
+test_data <- test_data[!test_data$Recipient %in% c("106", "155", "162"), ]
+test_data <- test_data[!test_data$Supplier  %in% c("6", "10", "34", "35"), ]
+predictions <- predict(linear_model, newdata = test_data)
+
+#Evaluate performance
 postResample(linear_predictions, test_data$SIPRI.TIV.for.total.order)
 ```
 
