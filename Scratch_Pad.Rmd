@@ -21,8 +21,11 @@ library(polycor)
 trade_register <- read.csv("trade-register.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE)
 
 # Check the first few rows to verify data import
-head(trade_register)
+#head(trade_register)
+trade_register <- subset(trade_register, Recipient == "Ukraine")
+trade_register
 ```
+
 ```{r}
 #Convert to numeric
 trade_register$SIPRI.TIV.for.total.order <- as.numeric(trade_register$SIPRI.TIV.for.total.order)
@@ -122,8 +125,8 @@ Cut Data for Faster Processing & Testing
 ```{r}
 set.seed(42)  # For reproducibility
 sample_size <- 500  # Define sample size
-trade_register_sample <- trade_register[sample(1:nrow(trade_register), sample_size), ]
-
+#trade_register_sample <- trade_register[sample(1:nrow(trade_register), sample_size), ]
+trade_register_sample <- trade_register
 ```
 
 
@@ -360,7 +363,8 @@ data$Weapon.description <- as.factor(data$Weapon.description)
 data$Year.of.order <- scale(data$Year.of.order)
 
 # Define the full model with all predictors
-full_model <- lm(SIPRI.TIV.for.total.order ~ Recipient + Supplier + Year.of.order + 
+#Remove Recipient for Urkaine
+full_model <- lm(SIPRI.TIV.for.total.order ~ Supplier + Year.of.order + 
                      Number.ordered + Weapon.designation + Weapon.description + 
                      Number.delivered + Year.s..of.delivery + status, 
                  data = data)
@@ -404,7 +408,7 @@ summary(stepwise_model)
 #Take a random sample from the dataset
 set.seed(42)  #For reproducibility
 sample_size <- 500  #Define sample size
-trade_register_sample <- trade_register[sample(1:nrow(trade_register), sample_size), ]
+#trade_register_sample <- trade_register[sample(1:nrow(trade_register), sample_size), ]
 
 #Identify categorical and numeric columns
 categorical_cols <- names(Filter(is.factor, trade_register))
