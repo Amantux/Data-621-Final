@@ -600,7 +600,8 @@ dw_test <- dwtest(model)
 print(dw_test)
 ```
 ```{r}
-# Standardized residuals
+# Standardized residuals1
+
 residuals_standardized <- rstandard(model)
 # Identify points with standardized residuals > 3 or < -3
 outliers <- which(abs(residuals_standardized) > 3)
