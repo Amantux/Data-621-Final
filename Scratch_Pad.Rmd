@@ -44,22 +44,63 @@ standardized unit, the Trend Indicator Value (TVI), to measure the value in term
 arms transfer and serves as a proxy for the military value of an item taking into account different
 indicators.  These indicators include weight, speed, payload, type of electronics, equipment age,
 whether the item(s) has been used in service by another armed forces.  As such, the TIV score allows
-for a standardized comparision of different weapons types in terms of miltiary value.  Each transaction
+for a standardized comparison of different weapons types in terms of military value.  Each transaction
 is essentially quantified in terms of mililatry value  
 
 The purpose of this analysis is assess weapons transfers to Ukraine between the years of 2014 to 2023.
-Utilizing features in the SIPRI database, the analysis seeks to uncover relationships which might
-contribute to TIV. Of particular interest are the effect
-of the features 'supplier' (country of weapon supplier) and 'Weapon designation' (type of weapon)
+Utilizing features in the SIPRI database, the analysis seeks to uncover relationships  between TIV (aka miliatry value) and supplying country. 
+
+
+(Rewrite this part)
+Our thoughts are that  TIV (aka military value) of an item is correlated a weapon's country of origin/manufacture? ('supplier'). Meaning that since the weapon system is domestically made by the supplier and developed countries supply a majority of weapons to developing counties, the supplier is more is relevant to a weapons platform tiv than other fatures (ie weapon type)
+
 
 The Null hypothesis for this analysis is: 
 
-*H0: There is no statistically significant relationship between the independent variables and SIPRI TIV total order.*
+*H0: There is no relationship between the supplier and SIPRI TIV per unit or order(dependent).* 
 
-*HA: At least one of the independent variables (Recipient, Supplier, Year of Order, Number Ordered, Weapon Designation, Weapon Description, Number Delivered, Years of Delivery, or Status) has a statistically significant effect on the SIPRI TIV for total order.*
+*HA: There is a statistically significant relationship between the supplier and SIPRI TIV total order or unit(dependent) which should align with established literature.* 
 
-**Literature review**
-**Methodology**
+
+
+**Literature review**    
+A limited number of quantitative studies have explored the economic and political dynamics of arms
+trades. Chou et al. applied network analysis to examine how political alliance networks, such as NATO,
+influence arms trade patterns. The findings revealed that countries within alliances are more likely
+to trade arms, with higher trade volumes observed when the supplying county is of more importance in the alliance. Notably, while Ukraine has established several defense agreements with
+the United States, Canada, and the United Kingdom, and has been a NATO ‘Enhanced Opportunities Partner’
+since 2020, Ukraine remains outside any formal military alliance, including NATO.
+
+Martinez-Zarzoso et al. similarly concluded that military alliances influence arms trade patterns but
+also found that in the post-Cold War era, less democratic countries are more becoming likely to export
+arms. Along the same lines, Akerman and Seim identified that in the post cold war era, differences in
+political systems between arms trading countries was becoming less important as a factor influencing
+the likelihood of an arms trade.  Of note, Ukraine emerged from the break up of the Soviet Union in 1991 and failed to democratize as successfully as some of the other countries which emerged from the
+dissolution of the Soviet Union.  Ukraine went through periods of increased rights, elections and freedoms followed by several backslides, including attempted rigged elections and lessened freedoms which cumulated in protest and one democratically leader(president) feeling to Russia
+
+Kempf found that developed economies have predominantly produced their military equipment domestically.
+He also noted that it is the developed world that is the predominant source of arms to developing
+countries, noting that “in each five-year period since 1991, the United States, Russia, the United
+Kingdom, Germany, France, and China have consistently supplied the world with roughly four-fifths of
+its foreign-based defense equipment, ranging from a low of 78 percent (2006–2010) to a high of 87
+percent immediately following the end of the Cold War.”
+
+In terms of military assistance, Ukraine has received significant international support, particularly
+from the United States. According to the Kiel Institute, the U.S. provided €59.9 billion in military
+aid to Ukraine between January 24, 2022, and October 31, 2023—far surpassing the next largest
+contributor, Germany, at €11 billion. However, in a historical context, the aid to Ukraine appears comparatively limited. For instance, the U.S. spent
+significantly more (as a percentage of GDP) during the Korea, Vietnam, and Iraq wars, while Germany
+committed far more during the Gulf War of 1990–1991 to liberate Kuwait than it has to Ukraine in 2022.
+These findings collectively highlight the critical role of alliances, the role of developed nations and
+the lessening importance of shared political ideologies in shaping arms trade patterns.
+
+To summarize, arms transfers are more like between members of military alliances, which Ukraine is not
+part of. Additionally, in the post cold war era, lesser democratic countries are now more likely to
+engage in weapons sales than prior to the cold war, and political differences as a factor in
+influencing the sale of arms between the two countries is lessening compared to the pre-cold war
+period.  WE would expect the United States, Germany, the UK and France to be the source of a lot of Ukraine's arms transactions if historical trends continue to present
+
+**Methodology** -Alex
 **Experimentation and Results**
 **Discussion and Conclusions**
 **References**
@@ -85,7 +126,7 @@ trade_register <- read.csv("https://raw.githubusercontent.com/Amantux/Data-621-F
 # Check the first few rows to verify data import
 #head(trade_register)
 trade_register <- subset(trade_register, Recipient == "Ukraine")
-trade_register
+head(trade_register)
 ```
 
 ```{r}
@@ -492,8 +533,8 @@ plot(model$fitted.values, sqrt(abs(model$residuals)),
 abline(h = 0, col = "red", lty = 2)
 
 # 4. Multicollinearity: Variance Inflation Factor (VIF)
-vif_values <- vif(model)
-print(vif_values)
+#vif_values <- vif(model)
+#print(vif_values)
 
 # 5. Independence of Residuals: Durbin-Watson Test
 library(lmtest)
@@ -591,8 +632,8 @@ plot(model$fitted.values, sqrt(abs(model$residuals)),
 abline(h = 0, col = "red", lty = 2)
 
 # 4. Multicollinearity: Variance Inflation Factor (VIF)
-vif_values <- vif(model)
-print(vif_values)
+#vif_values <- vif(model)
+#print(vif_values)
 
 # 5. Independence of Residuals: Durbin-Watson Test
 library(lmtest)
@@ -649,8 +690,8 @@ plot(model$fitted.values, sqrt(abs(model$residuals)),
 abline(h = 0, col = "red", lty = 2)
 
 # 4. Multicollinearity: Variance Inflation Factor (VIF)
-vif_values <- vif(model)
-print(vif_values)
+#vif_values <- vif(model)
+#print(vif_values)
 
 # 5. Independence of Residuals: Durbin-Watson Test
 library(lmtest)
@@ -663,9 +704,70 @@ print(dw_test)
 
 
 
+```{r}
+# Load necessary library
+library(dplyr)
+
+# Step 1: Sort data by time
+data <- data %>%
+  arrange(Year.of.order)  # Ensure data is sorted chronologically
+
+# Step 2: Create lagged variables
+data <- data %>%
+  mutate(
+    SIPRI.TIV.for.total.order.log.lag1 = lag(SIPRI.TIV.for.total.order.log, 1),  # 1-period lag
+    Number.delivered.lag1 = lag(Number.delivered, 1)                            # Example lagged variable
+  )
+
+# Step 3: Fit the model with the lag variable
+model_with_lag <- lm(SIPRI.TIV.for.total.order.log ~ Weapon.designation +
+                       Supplier + status + Number.delivered +
+                       Weapon.description + Year.of.order +
+                       SIPRI.TIV.for.total.order.log.lag1,  # Include lagged variable
+                     data = data, na.action = na.exclude)   # Handle NA values from lagging
+
+# Step 4: Summary of the model
+summary(model_with_lag)
 
 
 
+
+
+
+# 1. Linearity: Residuals vs Fitted Values Plot
+plot(model_with_lag$fitted.values, model_with_lag$residuals,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted Values")
+abline(h = 0, col = "red", lty = 2)
+
+# Add a smoother to detect patterns
+library(car)  # For scatterplot smoother
+scatterplot(model_with_lag$fitted.values, model_with_lag$residuals, smoother = TRUE, main = "Linearity Check")
+
+# 2. Normality of Residuals: Histogram and Q-Q Plot
+par(mfrow = c(1, 2))  # Set up plotting space
+hist(model_with_lag$residuals, breaks = 20, main = "Histogram of Residuals", xlab = "Residuals")
+qqnorm(model_with_lag$residuals, main = "Q-Q Plot")
+qqline(model_with_lag$residuals, col = "red")
+
+# 3. Homoscedasticity: Scale-Location Plot
+plot(model_with_lag$fitted.values, sqrt(abs(model_with_lag$residuals)),
+     xlab = "Fitted Values",
+     ylab = "Square Root of |Residuals|",
+     main = "Scale-Location Plot")
+abline(h = 0, col = "red", lty = 2)
+
+# 4. Multicollinearity: Variance Inflation Factor (VIF)
+#vif_values <- vif(model_with_lag)
+#print(vif_values)
+
+# 5. Independence of Residuals: Durbin-Watson Test
+library(lmtest)
+dw_test <- dwtest(model_with_lag)
+print(dw_test)
+```
+```
 
 
 
