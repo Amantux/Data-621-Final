@@ -217,11 +217,14 @@ trade_register <- trade_register %>%
 fields_to_remove <- c("Missing_Flag") #Add any fields you want to remove
 
 #Remove fields that exist in the dataset
-trade_register <- trade_register %>%
-  select(-all_of(intersect(fields_to_remove, names(trade_register))))
+trade_register_sample <- trade_register %>%
+  dplyr::select(-all_of(intersect(fields_to_remove, names(trade_register))))
 
 #View the cleaned dataset
 head(trade_register)
+
+
+
 ```
 
 
@@ -233,7 +236,25 @@ set.seed(42)  # For reproducibility
 sample_size <- 500  # Define sample size
 #trade_register_sample <- trade_register[sample(1:nrow(trade_register), sample_size), ]
 trade_register_sample <- trade_register
+names(trade_register_sample)[names(trade_register_sample) == "SIPRI TIV per unit"] <- "SIPRI_TIV_per_unit"
+trade_register_sample
+
 ```
+
+```{r}
+# Assuming your data frame is named 'data' and is already loaded
+#trade_register_sample$Supplier <- as.factor(trade_register_sample$Supplier)  # Ensure 'supplier' is #treated as a categorical variable
+
+# Perform ANOVA
+#anova_result <- aov(SIPRI.TIV.per.unit ~ Supplier, data = trade_register_sample)
+#summary(anova_result)
+
+# Plotting to visually inspect differences
+#ggplot(data, aes(x = Supplier, y = SIPRI.TIV.per.unit)) +
+#  geom_boxplot() +
+#  labs(title = "Boxplot of TIV by Supplier", x = "Supplier", y = "Total Value of Items")
+```
+
 
 
 
@@ -414,6 +435,9 @@ ggplot(heatmap_data, aes(x = Variable_1, y = Variable_2, fill = Eta_Squared)) +
     panel.grid = element_blank()
   )
 ```
+
+
+
 ```{r}
 #Filter and pivot the results to create a symmetric matrix
 results_filtered <- results[results$Measure == "Eta-Squared", ]  # Filter only Eta-Squared values
@@ -454,7 +478,15 @@ plot(dend, main = "Enhanced Dendrogram of Variables")
 
 
 
+
+
 Let's start our model building:
+
+This is our final model after stepwise regression
+
+lm(formula = SIPRI.TIV.for.total.order ~ Weapon.designation + 
+    Supplier + status + Number.delivered + Weapon.description + 
+    Year.of.order, data = data)
 ```{r}
 data <- na.omit(trade_register_sample)  # Or use imputation if preferred
 
@@ -471,8 +503,10 @@ data$Year.of.order <- scale(data$Year.of.order)
 # Define the full model with all predictors
 #Remove Recipient for Urkaine
 full_model <- lm(SIPRI.TIV.for.total.order ~ Supplier + Year.of.order + 
-                     Number.ordered + Weapon.designation + Weapon.description + 
-                     Number.delivered + Year.s..of.delivery + status, 
+                     Number.ordered + Weapon.description + 
+                     Weapon.designation +
+                     Number.delivered + Year.s..of.delivery+ 
+                     status, 
                  data = data)
 
 # Define the null model (intercept-only)
@@ -492,21 +526,24 @@ summary(stepwise_model)
 
 
 
+
+
 **Assumptions**
 Linearity: Residuals vs Fitted Values Plot
 In this plot, the residuals appear to fan out as the fitted values increase (wider spread toward the right), indicating heteroscedasticity (non-constant variance of residuals).
-1. May need to log transformation or Box-Cox transformation to address non-linearity and heteroscedasticity.
-2. Identify and consider removing or addressing outliers to reduce their influence.
+THis indicates that we may need to log transformation to address non-linearity and heteroscedasticity.
+We might also consider removing or addressing outliers to reduce their influence.
 
 Normality of Residuals: Histogram and Q-Q Plot
 Histogram of residuals is normal, but the Q-Q plot denotes skewed tails.
-This alludes to outliers in the data, possible non-normality in the dependent variable and potential heteroscedasticity (check using a scale-location plot).
-1. transform the dependent variable.
+This alludes to outliers in the data, possible non-normality in the dependent variable and potential heteroscedasticity (check using a scale-location plot).  TO account for the skewed tails, we may need to transform the dependent variable.
 ```{r}
 # Fit the linear model
-model <- lm(SIPRI.TIV.for.total.order ~ Weapon.designation + 
-              Supplier + status + Number.delivered + 
-              Weapon.description + Year.of.order, data = data)
+model <- lm(formula = SIPRI.TIV.for.total.order ~ Weapon.designation + 
+    Supplier + status + Number.delivered + Weapon.description + 
+    Year.of.order, data = data)
+
+
 
 # 1. Linearity: Residuals vs Fitted Values Plot
 plot(model$fitted.values, model$residuals,
@@ -541,7 +578,8 @@ library(lmtest)
 dw_test <- dwtest(model)
 print(dw_test)
 ```
-Below the dependent variable distribution is log transformed and residuals again plotted.  
+Below the dependent variable is log transformed and residuals again plotted. 
+The distribution of the dependent variable more resembles normal distribution after the log transformation, but the QQ plot has not
 ```{r}
 # Load necessary libraries
 library(ggplot2)
@@ -552,7 +590,7 @@ library(moments)  # For kurtosis
 ggplot(data, aes(x = SIPRI.TIV.for.total.order)) +
   geom_histogram(bins = 20, fill = "blue", color = "black", alpha = 0.7) +
   geom_density(color = "red", size = 1) +
-  labs(title = "Distribution of SIPRI TIV for Total Order",
+  labs(title = "Distribution of SIPRI TIV for Total Order (non-log transformed)",
        x = "SIPRI TIV for Total Order",
        y = "Frequency") +
   theme_minimal()
@@ -584,28 +622,16 @@ sipri_kurtosis_log <- kurtosis(data$SIPRI.TIV.for.total.order.log, na.rm = TRUE)
 cat("Skewness Log:", sipri_skewness_log, "\n")
 cat("Kurtosis Log:", sipri_kurtosis_log, "\n")
 
-#Original Data (Untransformed)
-#Skewness: 5.85686
-
-#A skewness value > 1 indicates a highly right-skewed distribution. This means the data has a long tail #on the right side, with extreme high values pulling the mean away from the median.
-#Kurtosis: 47.41724
-
-#A kurtosis value > 3 indicates a distribution with heavy tails and a sharp peak compared to a normal #distribution. This suggests many extreme values in the dataset, which can distort regression results.
-#Log-Transformed Data
-#Skewness Log: 0.5686021
-
-#A skewness value closer to 0 indicates the distribution is much less skewed after the transformation. #A skewness value between -0.5 and 0.5 is typically considered approximately symmetric; here, the data #is moderately symmetric.
-#Kurtosis Log: 2.905728
-
-#A kurtosis value close to 3 suggests the distribution is approximately normal after the log #transformation. The extreme tails have been reduced, making the data less prone to the influence of #outliers.
 
 ```
 
+Let's assess if the log transformation has improved the residual plots. The log transformation appears to have randomized the distribution of residuals in the residuals vs. fitted plot, aligning it more closely with the normal distribution required for linear regression. However, the Q-Q plot still exhibits some skewness in the tails.
+
 ```{r}
 # Fit the linear model
-model <- lm(SIPRI.TIV.for.total.order.log ~ Weapon.designation + 
-              Supplier + status + Number.delivered + 
-              Weapon.description + Year.of.order, data = data)
+model <- lm(formula = SIPRI.TIV.for.total.order.log ~ Weapon.designation + 
+    Supplier + status + Number.delivered + Weapon.description + 
+    Year.of.order, data = data)
 
 # 1. Linearity: Residuals vs Fitted Values Plot
 plot(model$fitted.values, model$residuals,
@@ -640,63 +666,116 @@ library(lmtest)
 dw_test <- dwtest(model)
 print(dw_test)
 ```
+I do not know if this belongs here or how to talk about it without saying we just dropped a variable because it made the residuals normal.
+
+If we drop 'Weapon.designation' from the dataset, the QQ plot falls in line with the expected normal distribution of residuals
+
+```{r}
+# Fit the linear model
+model <- lm(formula = SIPRI.TIV.for.total.order.log ~ #Weapon.designation + 
+    Supplier + status + Number.delivered + Weapon.description + 
+    Year.of.order, data = data)
+
+# 1. Linearity: Residuals vs Fitted Values Plot
+plot(model$fitted.values, model$residuals,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted Values")
+abline(h = 0, col = "red", lty = 2)
+
+# Add a smoother to detect patterns
+library(car)  # For scatterplot smoother
+scatterplot(model$fitted.values, model$residuals, smoother = TRUE, main = "Linearity Check")
+
+# 2. Normality of Residuals: Histogram and Q-Q Plot
+par(mfrow = c(1, 2))  # Set up plotting space
+hist(model$residuals, breaks = 20, main = "Histogram of Residuals", xlab = "Residuals")
+qqnorm(model$residuals, main = "Q-Q Plot")
+qqline(model$residuals, col = "red")
+
+# 3. Homoscedasticity: Scale-Location Plot
+plot(model$fitted.values, sqrt(abs(model$residuals)),
+     xlab = "Fitted Values",
+     ylab = "Square Root of |Residuals|",
+     main = "Scale-Location Plot")
+abline(h = 0, col = "red", lty = 2)
+
+# 4. Multicollinearity: Variance Inflation Factor (VIF)
+#vif_values <- vif(model)
+#print(vif_values)
+
+# 5. Independence of Residuals: Durbin-Watson Test
+library(lmtest)
+dw_test <- dwtest(model)
+print(dw_test)
+```
+
+
+
 ```{r}
 # Standardized residuals1
 
-residuals_standardized <- rstandard(model)
+#residuals_standardized <- rstandard(model)
 # Identify points with standardized residuals > 3 or < -3
-outliers <- which(abs(residuals_standardized) > 3)
-print(outliers)
+#outliers <- which(abs(residuals_standardized) > 3)
+#print(outliers)
 
 # Cook's Distance
-cooks <- cooks.distance(model)
-plot(cooks, main = "Cook's Distance", ylab = "Cook's Distance", xlab = "Observation")
-abline(h = 4/(nrow(data) - length(coef(model))), col = "red")
+#cooks <- cooks.distance(model)
+#plot(cooks, main = "Cook's Distance", ylab = "Cook's Distance", xlab = "Observation")
+#abline(h = 4/(nrow(data) - length(coef(model))), col = "red")
 ```
 ```{r}
 
-data_cleaned <- data[-outliers, ]
-data_cleaned
+#data_cleaned <- data[-outliers, ]
+#data_cleaned
+
+
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##############################after this is scrap. not part of main analysis
+
+
+
+
+
 
 ```{r}
-# Fit the linear model
-model <- lm(SIPRI.TIV.for.total.order.log ~ Weapon.designation + 
-              Supplier + status + Number.delivered + 
-              Weapon.description + Year.of.order, data = data_cleaned)
+library(MASS)
+#lm_model <- lm(SIPRI.TIV.for.total.order.log ~ Weapon.designation + 
+#               Supplier + status + Number.delivered + 
+ #              Weapon.description + Year.of.order, data = data_cleaned)
 
-# 1. Linearity: Residuals vs Fitted Values Plot
-plot(model$fitted.values, model$residuals,
-     xlab = "Fitted Values",
-     ylab = "Residuals",
-     main = "Residuals vs Fitted Values")
-abline(h = 0, col = "red", lty = 2)
+# Check for aliased coefficients
+#summary(lm_model)$alias
+#robust_model <- rlm(SIPRI.TIV.for.total.order.log ~ Weapon.designation + 
+#              Supplier + status + Number.delivered + 
+#              Weapon.description + Year.of.order, data = data_cleaned)
+#summary(robust_model)
 
-# Add a smoother to detect patterns
-library(car)  # For scatterplot smoother
-scatterplot(model$fitted.values, model$residuals, smoother = TRUE, main = "Linearity Check")
 
-# 2. Normality of Residuals: Histogram and Q-Q Plot
-par(mfrow = c(1, 2))  # Set up plotting space
-hist(model$residuals, breaks = 20, main = "Histogram of Residuals", xlab = "Residuals")
-qqnorm(model$residuals, main = "Q-Q Plot")
-qqline(model$residuals, col = "red")
-
-# 3. Homoscedasticity: Scale-Location Plot
-plot(model$fitted.values, sqrt(abs(model$residuals)),
-     xlab = "Fitted Values",
-     ylab = "Square Root of |Residuals|",
-     main = "Scale-Location Plot")
-abline(h = 0, col = "red", lty = 2)
-
-# 4. Multicollinearity: Variance Inflation Factor (VIF)
-#vif_values <- vif(model)
-#print(vif_values)
-
-# 5. Independence of Residuals: Durbin-Watson Test
-library(lmtest)
-dw_test <- dwtest(model)
-print(dw_test)
+#data_cleaned
+## Fit a linear model to use for VIF calculation
+lm_model <- lm(SIPRI.TIV.for.total.order.log ~ Weapon.designation + 
+               Supplier + status + Number.delivered + 
+               Weapon.description + 
+                 Year.of.order, data = data_cleaned)
+# Calculate VIF
+#vif(lm_model)
 ```
 
 
@@ -704,6 +783,14 @@ print(dw_test)
 
 
 
+
+
+
+
+
+
+
+LAG VARIABLE----NOT NEEDED
 ```{r}
 # Load necessary library
 library(dplyr)
@@ -767,16 +854,39 @@ library(lmtest)
 dw_test <- dwtest(model_with_lag)
 print(dw_test)
 ```
+
+
+
+glm without weapon.designation---not helpful
+```{r}
+glm_model <- glm(SIPRI.TIV.for.total.order.log ~ Weapon.designation + 
+              Supplier + status + Number.delivered + 
+              Weapon.description + Year.of.order
+              , data = data_cleaned)
+              
+plot(glm_model$fitted.values, glm_model$residuals,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted Values")
+abline(h = 0, col = "red", lty = 2)
+
+# Add a smoother to detect patterns
+library(car)  # For scatterplot smoother
+scatterplot(glm_model$fitted.values, glm_model$residuals, smoother = TRUE, main = "Linearity Check")
+
+# 2. Normality of Residuals: Histogram and Q-Q Plot
+par(mfrow = c(1, 2))  # Set up plotting space
+hist(glm_model$residuals, breaks = 20, main = "Histogram of Residuals", xlab = "Residuals")
+qqnorm(glm_model$residuals, main = "Q-Q Plot")
+qqline(glm_model$residuals, col = "red")
+
+# 3. Homoscedasticity: Scale-Location Plot
+plot(glm_model$fitted.values, sqrt(abs(glm_model$residuals)),
+     xlab = "Fitted Values",
+     ylab = "Square Root of |Residuals|",
+     main = "Scale-Location Plot")
+abline(h = 0, col = "red", lty = 2)
 ```
-
-
-
-
-
-
-
-
-
 
 
 
