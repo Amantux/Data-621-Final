@@ -364,100 +364,192 @@ plot(dend, main = "Enhanced Dendrogram of Variables")
 Let's start our model building:
 Were going to remove weapon Weapon.designation in order to prevent overfitting
 ```{r}
-data <- na.omit(trade_register_sample)  # Or use imputation if preferred
-data <- data %>% select(-Weapon.designation)
+#Data prep
+data <- na.omit(trade_register_sample)  #Remove NAs
+data <- data %>% select(-Weapon.designation)  #Drop unused col
 
-
-
-
-
+#Convert types
 data$Recipient <- as.factor(data$Recipient)
 data$Supplier <- as.factor(data$Supplier)
 data$status <- as.factor(data$status)
-#data$Weapon.designation <- as.factor(data$Weapon.designation)
 data$Weapon.description <- as.factor(data$Weapon.description)
-data$Year.of.order <- scale(data$Year.of.order)
+data$Year.of.order <- scale(data$Year.of.order)  #Scale numeric
 
-# Define the full model with all predictors
-#Remove Recipient for Urkaine
+#Train-test split
+set.seed(123)
+train_indices <- sample(1:nrow(data), 0.8 * nrow(data))
+train_data <- data[train_indices, ]
+test_data <- data[-train_indices, ]
+
+#Ensure all categories in train
+missing_categories <- unique(data$Weapon.description[!(data$Weapon.description %in% train_data$Weapon.description)])
+if (length(missing_categories) > 0) {
+  for (category in missing_categories) {
+    row_to_add <- test_data %>% filter(Weapon.description == category) %>% slice(1)
+    train_data <- bind_rows(train_data, row_to_add)
+    test_data <- test_data %>% filter(Weapon.description != category)  #Remove from test
+  }
+}
+
+#Align factor levels
+train_data$Weapon.description <- factor(train_data$Weapon.description, levels = levels(data$Weapon.description))
+test_data$Weapon.description <- factor(test_data$Weapon.description, levels = levels(data$Weapon.description))
+
+#Model definitions
 full_model <- lm(SIPRI.TIV.per.unit ~ Supplier + Year.of.order + 
-                     Number.ordered + Weapon.description + 
-                     Number.delivered + Year.s..of.delivery + status, 
-                 data = data)
+                   Number.ordered + Weapon.description + 
+                   Number.delivered + Year.s..of.delivery + status, 
+                 data = train_data)
+null_model <- lm(SIPRI.TIV.per.unit ~ 1, data = train_data)
 
-# Define the null model (intercept-only)
-null_model <- lm(SIPRI.TIV.per.unit ~ 1, data = data)
-
-# Perform stepwise regression based on AIC
+#Stepwise regression
 stepwise_model <- step(null_model, 
                        scope = list(lower = null_model, upper = full_model), 
                        direction = "both", 
                        trace = TRUE)
 
-# View the final model
-summary(stepwise_model)
+#Final model AIC
+final_aic <- AIC(stepwise_model)
+cat("Final Model AIC:", final_aic, "\n")
+
+#Test predictions
+test_predictions <- predict(stepwise_model, newdata = test_data)
+
+#Metrics
+test_rmse <- sqrt(mean((test_data$SIPRI.TIV.per.unit - test_predictions)^2))
+test_mae <- mean(abs(test_data$SIPRI.TIV.per.unit - test_predictions))
+test_r2 <- 1 - sum((test_data$SIPRI.TIV.per.unit - test_predictions)^2) / 
+               sum((test_data$SIPRI.TIV.per.unit - mean(test_data$SIPRI.TIV.per.unit))^2)
+
+#Output metrics
+cat("Test RMSE:", test_rmse, "\n")
+cat("Test MAE:", test_mae, "\n")
+cat("Test R^2:", test_r2, "\n")
+
 ```
 Summary Insights:
 Significant Positive Effects:
 
-    Weapon.descriptionABM/SAM system (21.68; p < 2e-16 ***): Indicates a large positive effect.
-    Weapon.descriptionFGA aircraft (11.08; p = 4.25e-09 ***): Strongly positive.
-    Weapon.descriptionSAM system (11.77; p = 5.43e-13 ***): Strong positive impact.
-    Weapon.descriptionminehunter (17.68; p = 2.81e-15 ***): Very significant positive impact.
+ABM/SAM Systems: Estimate 21.68 (p < 2e-16 ***)
+Crucial for air defense, shielding against ballistic missiles and aircraft.
+
+Minehunters: Estimate 17.68 (p = 5.80e-15 ***)
+Essential in maritime security, particularly in clearing naval mines in the Black Sea.
+
+SAM Systems: Estimate 11.32 (p = 8.50e-12 ***)
+Vital for countering low-altitude threats like drones and helicopters.
+
+FGA Aircraft: Estimate 11.08 (p = 3.11e-07 ***)
+Versatile in achieving air superiority and close air support.
+
+Multi-Role Radars: Estimate 5.52 (p = 0.00988 **)
+Key for situational awareness, supporting integrated defense systems.
+
+Ground Attack Aircraft: Estimate 4.28 (p = 0.04214 *)
+Effective for precision strikes on high-value ground targets.
+
+Air Search Radars: Estimate 4.01 (p = 0.01506 *)
+Integral to early warning and tracking systems.
 
 Significant Negative Effects:
 
-    statusSecond hand (-0.91; p = 0.00213 **): Indicates a statistically significant reduction in the outcome when the status is second-hand.
+Status: Second Hand: Estimate -0.66 (p = 0.05915 .)
+The reduced valuation is attributed to second-hand equipment, often less effective or outdated.
+
+Status: Second Hand but Modernized: Estimate -0.43 (p = 0.58004)
+Reflects slight depreciation compared to new equipment, but modernization mitigates some loss of value.
 
 Marginally Significant Effects:
 
-    Weapon.descriptioncoastal defence system (3.68; p = 0.08161 .): Marginally significant positive effect.
-    Weapon.descriptioncombat helicopter (3.08; p = 0.09232 .): Marginally significant positive effect.
+Coastal Defense Systems: Estimate 3.68 (p = 0.08020 .)
+Valuable for securing maritime boundaries but not universally impactful.
+
+Combat Helicopters: Estimate 3.08 (p = 0.09079 .)
+Useful in ground support and mobility, though less critical compared to fixed-wing aircraft.
+
+Patrol Craft: Estimate 3.36 (p = 0.06522 .)
+Contribute to maritime security but with limited strategic significance.
+
+Status: Second Hand but Modernized: Estimate -0.43 (p = 0.58004)
+Reflects slight depreciation compared to new equipment, but modernization mitigates some loss of value.
 
 Non-Significant Effects:
 
-    Many categories (e.g., Weapon.descriptionAEV, Weapon.descriptionanti-ship missile/ASM/SAM) show high p-values, indicating no statistically significant relationship with the dependent variable.
-
+   AEV: Estimate 0.61 (p = 0.72002)
+ALV: Estimate -0.08 (p = 0.96955)
+Anti-Ship Missile (ASM/SSM): Estimate 0.08 (p = 0.96271)
+APC: Estimate -0.28 (p = 0.85082)
+Armed UAV: Estimate 1.42 (p = 0.41467)
+Towed Gun: Estimate -0.03 (p = 0.98448)
+Reconnaissance AV: Estimate -0.20 (p = 0.92396)
 
 ```{r}
-#Prepare the data: Convert formula to design matrix
+# Prepare the data: Convert formula to design matrix
 X <- model.matrix(SIPRI.TIV.per.unit ~ Supplier + Year.of.order + 
                      Number.ordered + Weapon.description + 
                      Number.delivered + Year.s..of.delivery + status, 
-                  data = data)[, -1] #Exclude intercept
+                  data = data)[, -1] # Exclude intercept
 y <- data$SIPRI.TIV.per.unit
 
-#Train-test split
-set.seed(123)
-train_indices <- sample(1:nrow(X), 0.8 * nrow(X))
+# Train-test split
 X_train <- X[train_indices, ]
 y_train <- y[train_indices]
 X_test <- X[-train_indices, ]
 y_test <- y[-train_indices]
 
-#Ridge regression
+# Ridge regression
 ridge_model <- glmnet(X_train, y_train, alpha = 0)
-cv_ridge <- cv.glmnet(X_train, y_train, alpha = 0) #Cross-validation
+cv_ridge <- cv.glmnet(X_train, y_train, alpha = 0) # Cross-validation
 best_lambda_ridge <- cv_ridge$lambda.min
 
-#Lasso regression
+# Lasso regression
 lasso_model <- glmnet(X_train, y_train, alpha = 1)
-cv_lasso <- cv.glmnet(X_train, y_train, alpha = 1) #Cross-validation
+cv_lasso <- cv.glmnet(X_train, y_train, alpha = 1) # Cross-validation
 best_lambda_lasso <- cv_lasso$lambda.min
 
-#Predictions
+# Predictions
 ridge_preds <- predict(ridge_model, s = best_lambda_ridge, newx = X_test)
 lasso_preds <- predict(lasso_model, s = best_lambda_lasso, newx = X_test)
 
-#Evaluate performance
+# Evaluate performance: RMSE, R^2, MAE
 ridge_rmse <- sqrt(mean((ridge_preds - y_test)^2))
 lasso_rmse <- sqrt(mean((lasso_preds - y_test)^2))
 
-#Output results
-cat("Best Lambda (Ridge):", best_lambda_ridge, "\n")
-cat("Ridge RMSE:", ridge_rmse, "\n")
-cat("Best Lambda (Lasso):", best_lambda_lasso, "\n")
-cat("Lasso RMSE:", lasso_rmse, "\n")
+ridge_mae <- mean(abs(ridge_preds - y_test))
+lasso_mae <- mean(abs(lasso_preds - y_test))
+
+ridge_r2 <- 1 - sum((y_test - ridge_preds)^2) / sum((y_test - mean(y_test))^2)
+lasso_r2 <- 1 - sum((y_test - lasso_preds)^2) / sum((y_test - mean(y_test))^2)
+
+# Calculate AIC and BIC
+ridge_n <- length(y_test)
+ridge_sse <- sum((y_test - ridge_preds)^2)
+ridge_k <- length(coef(ridge_model, s = best_lambda_ridge)) # Non-zero coefficients
+ridge_aic <- ridge_n * log(ridge_sse / ridge_n) + 2 * ridge_k
+ridge_bic <- ridge_n * log(ridge_sse / ridge_n) + log(ridge_n) * ridge_k
+
+lasso_sse <- sum((y_test - lasso_preds)^2)
+lasso_k <- length(coef(lasso_model, s = best_lambda_lasso)) # Non-zero coefficients
+lasso_aic <- ridge_n * log(lasso_sse / ridge_n) + 2 * lasso_k
+lasso_bic <- ridge_n * log(lasso_sse / ridge_n) + log(ridge_n) * lasso_k
+
+# Output results
+cat("Ridge Regression:\n")
+cat("Best Lambda:", best_lambda_ridge, "\n")
+cat("RMSE:", ridge_rmse, "\n")
+cat("MAE:", ridge_mae, "\n")
+cat("R^2:", ridge_r2, "\n")
+cat("AIC:", ridge_aic, "\n")
+cat("BIC:", ridge_bic, "\n\n")
+
+cat("Lasso Regression:\n")
+cat("Best Lambda:", best_lambda_lasso, "\n")
+cat("RMSE:", lasso_rmse, "\n")
+cat("MAE:", lasso_mae, "\n")
+cat("R^2:", lasso_r2, "\n")
+cat("AIC:", lasso_aic, "\n")
+cat("BIC:", lasso_bic, "\n")
+
 ```
 ```{r}
 
